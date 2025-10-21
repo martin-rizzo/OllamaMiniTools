@@ -47,12 +47,16 @@ Usage: ./$SCRIPT_NAME.sh [OPTIONS] <GGUF_FILE1> <GGUF_FILE2>
     ./$SCRIPT_NAME.sh model1.gguf model2.gguf 
 "
 
-# define the default value of XDG_DATA_HOME if it is not set
+# the default value of XDG_DATA_HOME if it is not set
 XDG_DATA_HOME_DEFAULT="$HOME/.local/share"
 
-# define the base directory for OllamaMiniTools and llama.cpp binaries
-MINITOOLS_BASE_DIR="${XDG_DATA_HOME:-$XDG_DATA_HOME_DEFAULT}/OllamaMiniTools"
-LLAMA_CPP_BIN_DIR="${MINITOOLS_BASE_DIR}/llamacpp-bin"
+# define the base directory for OllamaMiniTools
+MINITOOLS_DATA_DIR="${XDG_DATA_HOME:-$XDG_DATA_HOME_DEFAULT}/OllamaMiniTools"
+
+# define the path to the llama.cpp binaries
+LLAMA_CPP_BIN_DIR="${MINITOOLS_DATA_DIR}/llamacpp-bin"
+LLAMA_CPP_VER="b6811"
+LLAMA_CPP_ZIP_URL="https://github.com/ggml-org/llama.cpp/releases/download/${LLAMA_CPP_VER}/llama-${LLAMA_CPP_VER}-bin-ubuntu-x64.zip"
 
 # define the path to the gguf-split command
 GGUF_SPLIT_CMD="${LLAMA_CPP_BIN_DIR}/llama-gguf-split"
@@ -89,6 +93,20 @@ fatal_error() {
 
 #============================== SUB-COMMANDS ===============================#
 
+# Downloads the llama.cpp tools required for processing GGUF files.
+#
+# Usage:
+#   download_llama_cpp_tools
+#
+# This function downloads and sets up the necessary tools from llama.cpp.
+# It prompts the user for confirmation, and handles the download, extraction,
+# and setup process.
+#
+# Global variables used:
+#   MINITOOLS_DATA_DIR: Directory where OllamaMiniTools data and tools are stored.
+#   LLAMA_CPP_BIN_DIR : Local directory where the llama.cpp tools will be downloaded.
+#   LLAMA_CPP_ZIP_URL : Remote URL from which to get the llama.cpp tools.
+#
 download_llama_cpp_tools() {
 
     # display a message telling the user that the llama.cpp tools will be downloaded
@@ -96,10 +114,45 @@ download_llama_cpp_tools() {
 
     # ask the user if they are sure
     read -r -p "Proceed? (y/n): " choice
-    if [[ "$choice" == [Yy] ]]; then
-        echo "Downloading the llama.cpp tools..."
+    if [[ "$choice" != [Yy] ]]; then
+        echo "Download cancelled."
+        exit 0
     fi
-    exit 0
+
+    # check if the directory for the llama.cpp tools is set
+    [[ -n "${LLAMA_CPP_BIN_DIR}" ]] || \
+        fatal_error "The directory for the llama.cpp tools is not set."
+
+    # recreate the directory for the llama.cpp tools
+    if [[ -e "${LLAMA_CPP_BIN_DIR}" ]]; then
+        echo "Removing the old directory: ${LLAMA_CPP_BIN_DIR}"
+        rm -rf "${LLAMA_CPP_BIN_DIR}"
+    fi
+    echo "Creating directory: ${LLAMA_CPP_BIN_DIR}"
+    mkdir -p "${LLAMA_CPP_BIN_DIR}"
+
+    # get the name of the zip file from the URL
+    local zip_base_name zipfile
+    zip_base_name=$(basename "${LLAMA_CPP_ZIP_URL}")
+    zipfile="${MINITOOLS_DATA_DIR}/${zip_base_name}"
+
+    # download the llama.cpp tools
+    if [[ ! -e "${zipfile}" ]]; then
+        echo "Downloading ${LLAMA_CPP_ZIP_URL}"
+        mkdir -p "${LLAMA_CPP_BIN_DIR}"
+        curl  -L "${LLAMA_CPP_ZIP_URL}" --output "${zipfile}"
+    fi
+
+    # extract the llama.cpp tools into the directory for the llama.cpp tools
+    echo "Extracting ${zip_base_name}"
+    unzip -o "${zipfile}" -d "${LLAMA_CPP_BIN_DIR}" || \
+        fatal_error "Failed to extract the llama.cpp tools into ${LLAMA_CPP_BIN_DIR}"
+
+    # move all the files in the "./build/bin" subdirectory into the root
+    mv "${LLAMA_CPP_BIN_DIR}"/build/bin/* "${LLAMA_CPP_BIN_DIR}"
+    rmdir "${LLAMA_CPP_BIN_DIR}"/build/bin
+    rmdir "${LLAMA_CPP_BIN_DIR}"/build
+    rm -f "${zipfile}"
 }
 
 # #===========================================================================#

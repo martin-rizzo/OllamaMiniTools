@@ -96,9 +96,61 @@ get_absolute_path() {
 
 #================================ COMMANDS =================================#
 
+# Lists all available models in Ollama
+#
+# Usage:
+#   cmd_list [--help] [-n|--name] [-s|--size]
+#
+# Options:
+#   --help: Show help message and exit.
+#   -n, --name: Sort models by their names (alphabetical order).
+#   -s, --size: Sort models by their size (largest to smallest).
+#
+# Example:
+#   cmd_list
+#   cmd_list -n
+#   cmd_list -s
+#
+# Notes:
+#   Requires the `ollama` command to be installed and in the PATH.
+#   The `awk`, `sort`, and `cut` commands are used for sorting by size.
+#
 cmd_list() {
-    "$OLLAMA" list
+    local header list sorted_list sort_by
+
+    # loop through all the command line arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --help) help ; exit 0 ;;
+            -n|--name) sort_by='name' ;;
+            -s|--size) sort_by='size' ;;
+            *) fatal_error "Unknown option: '$1'" ;;
+        esac
+        shift
+    done
+
+    # list all models usanig ollama
+    list=$("$OLLAMA" list)
+
+    # extract the header and list of models
+    header=$(echo "$list" | head -n 1)
+    list=$(echo "$list" | tail -n +2)
+
+    if [[ $sort_by == 'size' ]]; then
+        sorted_list=$(
+            echo "$list" | awk '{ size = $3; unit = $4; if (unit == "GB") size *= 1024; print size, $0 }' | sort -rn | cut -d' ' -f2-;
+        )
+    elif [[ $sort_by == 'name' ]]; then
+        sorted_list=$( echo "$list" | sort -k1,1  )
+    else
+        sorted_list=$list;
+    fi
+
+    # print the header and list of models
+    echo "$header"
+    echo "$sorted_list"
 }
+
 
 cmd_export() {
     local checkpoint=$1
@@ -179,9 +231,9 @@ main() {
 
     # execute the specified command
     case $command in
-        list)   cmd_list   "${arguments[@]}" exit 0 ;;
-        export) cmd_export "${arguments[@]}" exit 0 ;;
-        import) cmd_import "${arguments[@]}" exit 0 ;;
+        list)   cmd_list   "${arguments[@]}"; exit 0 ;;
+        export) cmd_export "${arguments[@]}"; exit 0 ;;
+        import) cmd_import "${arguments[@]}"; exit 0 ;;
         help)   help ;;
         *)
         fatal_error "Invalid command: \"$command\"" "Use --help for usage."

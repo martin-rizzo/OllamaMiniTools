@@ -30,21 +30,43 @@
 #     TORT OR OTHERWISE, ARISING FROM,OUT OF OR IN CONNECTION WITH THE
 #     SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-CMD=$1
-MODEL=$2
+SCRIPT_NAME=$(basename "${BASH_SOURCE[0]}")  # the name of this script
 OLLAMA='ollama'
-
-HELP=$(cat <<EOF
-Usage: $0 <command>
+HELP="
+Usage: ./$SCRIPT_NAME <command>
 
 Available commands:
   list            - List all Ollama models.
   export <model>  - Exporta el Modelfile del modelo suministrado
   import <model>  - Importa el archivo Modelfile modificandolo para el modelo suministrado
   help            - Display this help message.
-.
-EOF
-)
+"
+
+# ANSI escape codes for colored terminal output
+RED='\e[91m'; YELLOW='\e[93m'; GREEN='\e[92m'; CYAN='\e[96m'; RESET='\e[0m'
+disable_color() { RED=''; YELLOW=''; GREEN=''; CYAN=''; RESET=''; }
+
+#============================= ERROR MESSAGES ==============================#
+
+# Display help message
+help() { echo "${HELP}"; }
+
+# Display a warning message
+warning() { echo -e "\n${CYAN}[${YELLOW}WARNING${CYAN}]${RESET} $1" >&2; }
+
+# Display an error message
+error() { echo -e "\n${CYAN}[${RED}ERROR${CYAN}]${RESET} $1" >&2; }
+
+# Displays a fatal error message and exits the script
+fatal_error() {
+    error "$1"; shift
+    while [[ $# -gt 0 ]]; do
+        echo -e " ${CYAN}\xF0\x9F\x9B\x88 $1${RESET}" >&2
+        shift
+    done
+    echo; exit 1
+}
+
 
 ask_user() {
     local question="$1"
@@ -72,19 +94,24 @@ get_absolute_path() {
     echo $(realpath "$relative_path")
 }
 
+#================================ COMMANDS =================================#
+
 cmd_list() {
     "$OLLAMA" list
 }
 
 cmd_export() {
-    local modelfile=$1 checkpoint=$2
+    local checkpoint=$1
+    local modelfile="Modelfile"
     echo "Exporting Modelfile for '$checkpoint'"
-    echo "Creating file $outfile"
+    echo "Creating file $modelfile"
     "$OLLAMA" show --modelfile "$checkpoint" > "$modelfile"
 }
 
 cmd_import() {
-    local modelfile="$1" checkpoint="$2"
+    local checkpoint=$1
+    local modelfile="Modelfile"
+    
     # replace the line that starts with 'FROM'
     echo "Modificando archivo Modelfile apuntando a '$checkpoint'"
 
@@ -107,37 +134,59 @@ cmd_import() {
 }
 
 
-CMD="${CMD:---help}"
-case "$CMD" in
-    list)
-        cmd_list
-        exit 0
-        ;;
-    export)
-        cmd_export "Modelfile" "$MODEL"
-        exit 0
-        ;;
-    help|-h|--help)
-        echo "$HELP"
-        exit 0
-esac
+# #===========================================================================#
+# #////////////////////////////////// MAIN ///////////////////////////////////#
+# #===========================================================================#
+main() {
+    local no_color=false   # no color mode flag
+    local command=''       # default command to execute
+    local arguments=()     # array to store the arguments for the command
 
-if [[ -z "${OLLAMA_USER}" ]]; then
-    echo "Error: OLLAMA_USER environment variable is not set."
-    echo "This variable must be defined with your ollama.com username."
-    echo "To set it, use the following command:"
-    echo "  export OLLAMA_USER='your_ollama_username'"
-    exit 1
-fi
-
-# process the provided command
-case "$CMD" in
-    import)
-        cmd_import "Modelfile" "$MODEL"
-        ;;
-    *)
-        echo "Error: Unknown command '$CMD'."
+    # check that the environment variable OLLAMA_USER is correctly defined
+    if [[ -z "${OLLAMA_USER}" ]]; then
+        echo "Error: OLLAMA_USER environment variable is not set."
+        echo "This variable must be defined with your ollama.com username."
+        echo "To set it, use the following command:"
+        echo "  export OLLAMA_USER='your_ollama_username'"
         exit 1
-        ;;
-esac
+    fi
 
+    # loop through all the command line arguments
+    while [[ $# -gt 0 ]]; do
+        if [[ $1 == -* ]]; then
+            case $1 in
+                -n|--nc|--no-color) no_color=true ;;
+                *)
+                # add to the list of arguments for the command
+                arguments+=("$1")
+                ;; 
+            esac
+        else
+            if [[ -z "$command" ]]; then command="$1"
+            else
+                # add to the list of arguments for the command
+                arguments+=("$1") 
+            fi
+        fi
+        shift # next argument
+    done
+
+    # disable color output if --no-color option is provided
+    if [[ $no_color == true ]]; then disable_color; fi
+
+    # if no command is specified, show the help message
+    if [[ -z "$command" ]]; then help; exit 0; fi
+
+    # execute the specified command
+    case $command in
+        list)   cmd_list   "${arguments[@]}" exit 0 ;;
+        export) cmd_export "${arguments[@]}" exit 0 ;;
+        import) cmd_import "${arguments[@]}" exit 0 ;;
+        help)   help ;;
+        *)
+        fatal_error "Invalid command: \"$command\"" "Use --help for usage."
+        ;;
+    esac
+
+}
+main "$@"
